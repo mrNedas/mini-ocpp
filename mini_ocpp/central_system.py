@@ -1,7 +1,10 @@
 import asyncio
 import json
 import websockets
+import uuid
 from datetime import datetime
+from quart import Quart, jsonify, request
+from message_types import MessageType
 
 
 class CentralSystem:
@@ -9,12 +12,23 @@ class CentralSystem:
         self.host = host
         self.port = port
         self.connected_charging_points = {}  # Store connected charging points
+        self.pending_requests = {}
 
     async def process_message(self, websocket, message):
         try:
+            message_type = message[0]
             message_id = message[1]
-            action = message[2]
-            payload = message[3]
+            if message_type == MessageType.CALL_RESULT.value:
+                payload = message[2]
+            elif message_type == MessageType.CALL.value:
+                action = message[2]
+                payload = message[3]
+
+            if message_type == MessageType.CALL_RESULT.value:
+                if message_id in self.pending_requests:
+                    future = self.pending_requests.pop(message_id)
+                    future.set_result(payload)
+                    return
 
             if action == "BootNotification":
                 await self.process_boot_notification(websocket, message_id, payload)
@@ -38,7 +52,7 @@ class CentralSystem:
             "status": "Accepted",
             "currentTime": datetime.utcnow().isoformat()
             + "Z",  # Current time in ISO 8601 format
-            "interval": 5,
+            "interval": 300,
         }
         response = [3, message_id, response_payload]
         response_json = json.dumps(response)
@@ -71,15 +85,29 @@ class CentralSystem:
                     del self.connected_charging_points[charge_point_id]
                     break
 
-    async def start_server(self):
-        server = await websockets.serve(self.handle_connection, self.host, self.port)
-        print(f"Server started at ws://{self.host}:{self.port}")
-        await server.wait_closed()
+    async def send_get_configuration(self, charge_point_id):
+        if charge_point_id in self.connected_charging_points:
+            websocket = self.connected_charging_points[charge_point_id]
+            message_id = str(uuid.uuid4())
+            action = "GetConfiguration"
+            request = [2, message_id, action, {}]
+            request_json = json.dumps(request)
+
+            await websocket.send(request_json)
+            print(f"Sent to {charge_point_id}: {request_json}")
+
+            future = asyncio.get_event_loop().create_future()
+            self.pending_requests[message_id] = future
+            response = await future
+            return response
+        else:
+            print(f"Charging point {charge_point_id} not connected")
+            return jsonify({"error": "Charging point not connected"}), 404
 
     async def send_change_configuration(self, charge_point_id, key, value):
         if charge_point_id in self.connected_charging_points:
             websocket = self.connected_charging_points[charge_point_id]
-            message_id = "3"
+            message_id = str(uuid.uuid4())
             action = "ChangeConfiguration"
             payload = {"key": key, "value": value}
             request = [2, message_id, action, payload]
@@ -93,7 +121,20 @@ class CentralSystem:
         else:
             print(f"Charging point {charge_point_id} not connected")
 
+    async def run(self):
+        app = Quart(__name__)
+
+        @app.route("/charging_points/<charge_point_id>/configuration", methods=["GET"])
+        async def get_charging_point_configuration(charge_point_id):
+            return await self.send_get_configuration(charge_point_id)
+
+        server_task = asyncio.create_task(app.run_task(host=self.host, port=3000))
+        print(f"HTTP REST API started at http://{self.host}:{self.port}")
+
+        async with websockets.serve(self.handle_connection, self.host, self.port):
+            await server_task
+
 
 if __name__ == "__main__":
     central_system = CentralSystem(host="localhost", port=9000)
-    asyncio.run(central_system.start_server())
+    asyncio.run(central_system.run())

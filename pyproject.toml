@@ -7,6 +7,7 @@ authors = ["Nedas Jarmolenka <nedasman@gmail.com>"]
 [tool.poetry.dependencies]
 python = "^3.10"
 websockets = "^10.0"
+quart = "^0.19.6"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
