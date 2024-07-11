@@ -1,6 +1,7 @@
 import asyncio
 import json
 import websockets
+from datetime import datetime
 
 
 class CentralSystem:
@@ -14,22 +15,36 @@ class CentralSystem:
             action = message[2]
             payload = message[3]
 
-            print(f"Received BootNotification with payload: {payload}")
-
             if action == "BootNotification":
-                response_payload = {
-                    "status": "Accepted",
-                    "currentTime": "2024-07-09T12:00:00Z",  # TODO: set dynamically
-                    "interval": 300,  # TODO: set dynamically
-                }
-                response = [3, message_id, response_payload]
-                response_json = json.dumps(response)
-                await websocket.send(response_json)
-                print(f"Sent: {response_json}")
+                await self.process_boot_notification(websocket, message_id, payload)
+            elif action == "Heartbeat":
+                await self.process_heartbeat(websocket, message_id)
             else:
-                print("Received unsupported action")
+                print(f"Received unsupported action: {action}")
         except Exception as e:
             print(f"Error processing message: {e}")
+
+    async def process_boot_notification(self, websocket, message_id, payload):
+        print(f"Received BootNotification with payload: {payload}")
+        response_payload = {
+            "status": "Accepted",
+            "currentTime": datetime.utcnow().isoformat() + "Z",  # Current time in ISO 8601 format
+            "interval": 300  # Heartbeat interval in seconds, CP should set this value as heartbeat interval
+        }
+        response = [3, message_id, response_payload]
+        response_json = json.dumps(response)
+        await websocket.send(response_json)
+        print(f"Sent: {response_json}")
+
+    async def process_heartbeat(self, websocket, message_id):
+        print("Received Heartbeat")
+        response_payload = {
+            "currentTime": datetime.utcnow().isoformat() + "Z"  # Current time in ISO 8601 format
+        }
+        response = [3, message_id, response_payload]
+        response_json = json.dumps(response)
+        await websocket.send(response_json)
+        print(f"Sent: {response_json}")
 
     async def handle_connection(self, websocket, path):
         async for message in websocket:
