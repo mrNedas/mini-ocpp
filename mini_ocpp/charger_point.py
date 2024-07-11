@@ -4,14 +4,19 @@ import websockets
 
 
 class ChargingPoint:
-    def __init__(self, uri, model, vendor):
+    def __init__(self, uri, model, vendor, serial_number):
         self.uri = uri
         self.model = model
         self.vendor = vendor
-        self.config = {"HeartbeatInterval": 5}
+        self.serial_number = serial_number
+        self.config = {"HeartbeatInterval": 30}
 
     def form_boot_notification_payload(self):
-        return {"chargePointModel": self.model, "chargePointVendor": self.vendor}
+        return {
+            "chargePointModel": self.model,
+            "chargePointVendor": self.vendor,
+            "chargePointSerialNumber": self.serial_number,
+        }
 
     def process_boot_notification_payload(self, response):
         response_message = json.loads(response)
@@ -91,6 +96,9 @@ if __name__ == "__main__":
     uri = "ws://localhost:9000"
     model = "BestModel"
     vendor = "BestVendor"
+    serial_number = "0000001"
 
-    charging_point = ChargingPoint(uri=uri, model=model, vendor=vendor)
+    charging_point = ChargingPoint(
+        uri=uri, model=model, vendor=vendor, serial_number=serial_number
+    )
     asyncio.run(charging_point.run())
