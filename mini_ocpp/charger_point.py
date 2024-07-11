@@ -2,6 +2,7 @@ import asyncio
 import json
 import websockets
 
+
 class ChargingPoint:
     def __init__(self, uri, model, vendor):
         self.uri = uri
@@ -9,10 +10,7 @@ class ChargingPoint:
         self.vendor = vendor
 
     def boot_notification_payload(self):
-        return {
-            "chargePointModel": self.model,
-            "chargePointVendor": self.vendor
-        }
+        return {"chargePointModel": self.model, "chargePointVendor": self.vendor}
 
     async def send_boot_notification(self):
         async with websockets.connect(self.uri) as websocket:
@@ -29,6 +27,7 @@ class ChargingPoint:
 
             response = await websocket.recv()
             print(f"Received: {response}")
+
 
 if __name__ == "__main__":
     uri = "ws://localhost:9000"
