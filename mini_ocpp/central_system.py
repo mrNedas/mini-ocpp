@@ -1,10 +1,13 @@
 import asyncio
 import json
 import websockets
+import logging
 import uuid
 from datetime import datetime
 from quart import Quart, jsonify, request
 from message_types import MessageType
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 
 class CentralSystem:
@@ -23,7 +26,7 @@ class CentralSystem:
         elif action == "Heartbeat":
             await self.process_heartbeat(websocket, message_id)
         else:
-            print(f"Received unsupported action: {action}")
+            logging.warning(f"Received unsupported action: {action}")
 
     def process_call_result_message(self, message):
         message_id = message[1]
@@ -40,14 +43,14 @@ class CentralSystem:
             elif message_type == MessageType.CALL_RESULT.value:
                 return self.process_call_result_message(message)
         except Exception as e:
-            print(f"Error processing message: {e}")
+            logging.error(f"Error processing message: {e}")
 
     async def process_boot_notification(self, websocket, message_id, payload):
-        print(f"Received BootNotification with payload: {payload}")
+        logging.info(f"Received BootNotification with payload: {payload}")
         charge_point_id = payload.get("chargePointSerialNumber")
         if charge_point_id:
             self.connected_charging_points[charge_point_id] = websocket
-            print(f"Charging point {charge_point_id} connected.")
+            logging.info(f"Charging point {charge_point_id} connected.")
 
         response_payload = {
             "status": "Accepted",
@@ -57,15 +60,15 @@ class CentralSystem:
         response = [3, message_id, response_payload]
         response_json = json.dumps(response)
         await websocket.send(response_json)
-        print(f"Sent: {response_json}")
+        logging.debug(f"Sent: {response_json}")
 
     async def process_heartbeat(self, websocket, message_id):
-        print("Received Heartbeat")
+        logging.info("Received Heartbeat")
         response_payload = {"currentTime": datetime.utcnow().isoformat() + "Z"}
         response = [3, message_id, response_payload]
         response_json = json.dumps(response)
         await websocket.send(response_json)
-        print(f"Sent: {response_json}")
+        logging.debug(f"Sent: {response_json}")
 
     async def handle_connection(self, websocket):
         try:
@@ -75,7 +78,7 @@ class CentralSystem:
         except websockets.exceptions.ConnectionClosed:
             for charge_point_id, ws in self.connected_charging_points.items():
                 if ws == websocket:
-                    print(f"Charging point {charge_point_id} disconnected.")
+                    logging.info(f"Charging point {charge_point_id} disconnected.")
                     del self.connected_charging_points[charge_point_id]
                     break
 
@@ -88,14 +91,14 @@ class CentralSystem:
             request_json = json.dumps(request)
 
             await websocket.send(request_json)
-            print(f"Sent to {charge_point_id}: {request_json}")
+            logging.debug(f"Sent to {charge_point_id}: {request_json}")
 
             future = asyncio.get_event_loop().create_future()
             self.pending_requests[message_id] = future
             response = await future
             return response
         else:
-            print(f"Charging point {charge_point_id} not connected")
+            logging.error(f"Charging point {charge_point_id} not connected")
             return jsonify({"error": "Charging point not connected"}), 404
 
     async def send_change_configuration(self, charge_point_id, key, value):
@@ -108,14 +111,14 @@ class CentralSystem:
             request_json = json.dumps(request)
 
             await websocket.send(request_json)
-            print(f"Sent to {charge_point_id}: {request_json}")
+            logging.debug(f"Sent to {charge_point_id}: {request_json}")
 
             future = asyncio.get_event_loop().create_future()
             self.pending_requests[message_id] = future
             response = await future
             return response
         else:
-            print(f"Charging point {charge_point_id} not connected")
+            logging.error(f"Charging point {charge_point_id} not connected")
             return jsonify({"error": "Charging point not connected"}), 404
 
     async def run(self):
@@ -133,7 +136,7 @@ class CentralSystem:
             return await self.send_change_configuration(charge_point_id, key, value)
 
         server_task = asyncio.create_task(app.run_task(host=self.host, port=3000))
-        print(f"HTTP REST API started at http://{self.host}:{self.port}")
+        logging.info(f"HTTP REST API started at http://{self.host}:{self.port}")
 
         async with websockets.serve(self.handle_connection, self.host, self.port):
             await server_task

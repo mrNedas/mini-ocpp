@@ -1,8 +1,11 @@
 import asyncio
 import json
 import websockets
+import logging
 import uuid
 from message_types import MessageType
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 class ChargingPoint:
@@ -23,11 +26,13 @@ class ChargingPoint:
 
     def process_boot_notification(self, payload):
         self.config["HeartbeatInterval"] = payload["interval"]
-        print(f"Heartbeat interval set to: {self.config['HeartbeatInterval']} seconds")
+        logging.info(
+            f"Heartbeat interval set to: {self.config['HeartbeatInterval']} seconds"
+        )
 
-    def process_heartbeat(self, response):
-        print("Process heartbeat")
-        # TODO: update local clock
+    def process_heartbeat(self, payload):
+        logging.info("Process heartbeat")
+        # TODO: update CP's local clock
 
     async def send_boot_notification(self, websocket):
         message_id = str(uuid.uuid4())
@@ -37,7 +42,7 @@ class ChargingPoint:
         request_json = json.dumps(request)
 
         await websocket.send(request_json)
-        print(f"Sent: {request_json}")
+        logging.debug(f"Sent: {request_json}")
         self.__sent_calls[message_id] = action
 
     async def send_heartbeat(self, websocket):
@@ -47,24 +52,25 @@ class ChargingPoint:
         request_json = json.dumps(request)
 
         await websocket.send(request_json)
-        print(f"Sent: {request_json}")
+        logging.debug(f"Sent: {request_json}")
         self.__sent_calls[message_id] = action
 
     def process_get_configuration(self, message_id):
-        print("Processing GetConfiguration request")
+        logging.info("Processing GetConfiguration request")
         payload = {"configuration": self.config}
         response = [MessageType.CALL_RESULT.value, message_id, payload]
         return response
 
     def process_change_configuration(self, message_id, payload):
-        print(f"Processing ChangeConfiguration with payload: {payload}")
+        logging.info(f"Processing ChangeConfiguration with payload: {payload}")
         key = payload["key"]
         value = payload["value"]
         if key in self.config:
             self.config[key] = value
-            print(f"Changed configuration: {key} = {value}")
+            logging.info(f"Changed configuration: {key} = {value}")
             response_payload = {"status": "Accepted"}
         else:
+            logging.error(f"Rejected configuration change: unknown key {key}")
             response_payload = {"status": "Rejected"}
 
         response = [MessageType.CALL_RESULT.value, message_id, response_payload]
@@ -80,7 +86,7 @@ class ChargingPoint:
         elif action == "ChangeConfiguration":
             response = self.process_change_configuration(message_id, payload)
         else:
-            print(f"Received unsupported action: {action}")
+            logging.warning(f"Received unsupported action: {action}")
 
         return json.dumps(response)
 
@@ -91,7 +97,7 @@ class ChargingPoint:
             payload = message[2]
             del self.__sent_calls[message_id]
         else:
-            print("No call message was sent for this message.")
+            logging.warning("No call message was sent for this message.")
             return
 
         if action == "BootNotification":
@@ -100,7 +106,7 @@ class ChargingPoint:
             self.process_heartbeat(payload)
 
     def handle_message(self, message):
-        print(f"Received: {message}")
+        logging.info(f"Received: {message}")
 
         message_type = message[0]
         if message_type == MessageType.CALL.value:
@@ -116,9 +122,9 @@ class ChargingPoint:
                 response = self.handle_message(message)
                 if response:
                     await websocket.send(response)
-                    print(f"Sent: {response}")
+                    logging.debug(f"Sent: {response}")
         except websockets.exceptions.ConnectionClosed:
-            print("WebSocket connection closed.")
+            logging.info("WebSocket connection closed.")
 
     async def heartbeat_task(self, websocket):
         while True:
