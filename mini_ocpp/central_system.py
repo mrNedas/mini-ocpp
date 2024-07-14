@@ -50,8 +50,7 @@ class CentralSystem:
 
         response_payload = {
             "status": "Accepted",
-            "currentTime": datetime.utcnow().isoformat()
-            + "Z",  # Current time in ISO 8601 format
+            "currentTime": datetime.utcnow().isoformat() + "Z",
             "interval": 300,
         }
         response = [3, message_id, response_payload]
@@ -61,10 +60,7 @@ class CentralSystem:
 
     async def process_heartbeat(self, websocket, message_id):
         print("Received Heartbeat")
-        response_payload = {
-            "currentTime": datetime.utcnow().isoformat()
-            + "Z"  # Current time in ISO 8601 format
-        }
+        response_payload = {"currentTime": datetime.utcnow().isoformat() + "Z"}
         response = [3, message_id, response_payload]
         response_json = json.dumps(response)
         await websocket.send(response_json)
@@ -90,7 +86,7 @@ class CentralSystem:
             websocket = self.connected_charging_points[charge_point_id]
             message_id = str(uuid.uuid4())
             action = "GetConfiguration"
-            request = [2, message_id, action, {}]
+            request = [MessageType.CALL.value, message_id, action, {}]
             request_json = json.dumps(request)
 
             await websocket.send(request_json)
@@ -110,16 +106,19 @@ class CentralSystem:
             message_id = str(uuid.uuid4())
             action = "ChangeConfiguration"
             payload = {"key": key, "value": value}
-            request = [2, message_id, action, payload]
+            request = [MessageType.CALL.value, message_id, action, payload]
             request_json = json.dumps(request)
 
             await websocket.send(request_json)
             print(f"Sent to {charge_point_id}: {request_json}")
 
-            response = await websocket.recv()
-            print(f"Received from {charge_point_id}: {response}")
+            future = asyncio.get_event_loop().create_future()
+            self.pending_requests[message_id] = future
+            response = await future
+            return response
         else:
             print(f"Charging point {charge_point_id} not connected")
+            return jsonify({"error": "Charging point not connected"}), 404
 
     async def run(self):
         app = Quart(__name__)
@@ -127,6 +126,13 @@ class CentralSystem:
         @app.route("/charging_points/<charge_point_id>/configuration", methods=["GET"])
         async def get_charging_point_configuration(charge_point_id):
             return await self.send_get_configuration(charge_point_id)
+
+        @app.route("/charging_points/<charge_point_id>/configuration", methods=["POST"])
+        async def change_charging_point_configuration(charge_point_id):
+            data = await request.get_json()
+            key = data.get("key")
+            value = data.get("value")
+            return await self.send_change_configuration(charge_point_id, key, value)
 
         server_task = asyncio.create_task(app.run_task(host=self.host, port=3000))
         print(f"HTTP REST API started at http://{self.host}:{self.port}")
