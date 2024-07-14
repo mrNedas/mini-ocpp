@@ -14,30 +14,31 @@ class CentralSystem:
         self.connected_charging_points = {}  # Store connected charging points
         self.pending_requests = {}
 
+    async def process_call_message(self, websocket, message):
+        message_id = message[1]
+        action = message[2]
+        payload = message[3]
+        if action == "BootNotification":
+            await self.process_boot_notification(websocket, message_id, payload)
+        elif action == "Heartbeat":
+            await self.process_heartbeat(websocket, message_id)
+        else:
+            print(f"Received unsupported action: {action}")
+
+    def process_call_result_message(self, message):
+        message_id = message[1]
+        payload = message[2]
+        if message_id in self.pending_requests:
+            future = self.pending_requests.pop(message_id)
+            future.set_result(payload)
+
     async def process_message(self, websocket, message):
         try:
             message_type = message[0]
-            message_id = message[1]
-            if message_type == MessageType.CALL_RESULT.value:
-                payload = message[2]
-            elif message_type == MessageType.CALL.value:
-                action = message[2]
-                payload = message[3]
-
-            if message_type == MessageType.CALL_RESULT.value:
-                if message_id in self.pending_requests:
-                    future = self.pending_requests.pop(message_id)
-                    future.set_result(payload)
-                    return
-
-            if action == "BootNotification":
-                await self.process_boot_notification(websocket, message_id, payload)
-            elif action == "Heartbeat":
-                await self.process_heartbeat(websocket, message_id)
-            elif action == "ChangeConfiguration":
-                await self.process_change_configuration(websocket, message_id, payload)
-            else:
-                print(f"Received unsupported action: {action}")
+            if message_type == MessageType.CALL.value:
+                return await self.process_call_message(websocket, message)
+            elif message_type == MessageType.CALL_RESULT.value:
+                return self.process_call_result_message(message)
         except Exception as e:
             print(f"Error processing message: {e}")
 
@@ -66,10 +67,7 @@ class CentralSystem:
         await websocket.send(response_json)
         print(f"Sent: {response_json}")
 
-    async def process_change_configuration(self, websocket, message_id, payload):
-        print(f"Processing ChangeConfiguration with payload: {payload}")
-
-    async def handle_connection(self, websocket, path):
+    async def handle_connection(self, websocket):
         try:
             async for message in websocket:
                 message = json.loads(message)
