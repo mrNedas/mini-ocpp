@@ -5,15 +5,14 @@ import logging
 import uuid
 from datetime import datetime
 from quart import Quart, jsonify, request
-from message_types import MessageType
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+from .message_types import MessageType
 
 
 class CentralSystem:
-    def __init__(self, host, port):
+    def __init__(self, host, ws_port, http_port):
         self.host = host
-        self.port = port
+        self.ws_port = ws_port
+        self.http_port = http_port
         self.connected_charging_points = {}  # Store connected charging points
         self.pending_requests = {}
 
@@ -135,13 +134,10 @@ class CentralSystem:
             value = data.get("value")
             return await self.send_change_configuration(charge_point_id, key, value)
 
-        server_task = asyncio.create_task(app.run_task(host=self.host, port=3000))
-        logging.info(f"HTTP REST API started at http://{self.host}:{self.port}")
+        server_task = asyncio.create_task(
+            app.run_task(host=self.host, port=self.http_port)
+        )
+        logging.info(f"HTTP REST API started at http://{self.host}:{self.http_port}")
 
-        async with websockets.serve(self.handle_connection, self.host, self.port):
+        async with websockets.serve(self.handle_connection, self.host, self.ws_port):
             await server_task
-
-
-if __name__ == "__main__":
-    central_system = CentralSystem(host="localhost", port=9000)
-    asyncio.run(central_system.run())

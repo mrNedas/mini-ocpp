@@ -3,7 +3,7 @@ import json
 import websockets
 import logging
 import uuid
-from message_types import MessageType
+from .message_types import MessageType
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -141,15 +141,3 @@ class ChargingPoint:
 
             await self.send_boot_notification(websocket)
             await asyncio.gather(listen_task, heartbeat_task)
-
-
-if __name__ == "__main__":
-    uri = "ws://localhost:9000"
-    model = "BestModel"
-    vendor = "BestVendor"
-    serial_number = "100"
-
-    charging_point = ChargingPoint(
-        uri=uri, model=model, vendor=vendor, serial_number=serial_number
-    )
-    asyncio.run(charging_point.run())
