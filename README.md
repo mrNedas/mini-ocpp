@@ -42,19 +42,26 @@ This project demonstrates communication between a Central System and multiple Ch
      poetry install
      ```
 
-2. **Running the Central System**:
+2. **Running Tests**:
+   - To run tests using Poetry:
+     ```
+     poetry run test
+     ```
+
+3. **Running the Central System**:
    - Modify `demo_central_system.py` to configure host, WebSocket port, and HTTP port as needed.
    - Run the Central System using Poetry:
      ```
      poetry run python demo_central_system.py
      ```
 
-3. **Running a Charging Point**:
+4. **Running a Charging Point**:
    - Modify `demo_charging_point.py` to configure WebSocket URI, model, vendor, and serial number of the Charging Point.
    - Run the Charging Point using Poetry:
      ```
-     run python demo_cp.py --uri ws://localhost:9000 --model BestModel --vendor BestVendor --serial_number 100
+     poetry run python demo_cp.py --uri ws://localhost:9000 --model BestModel --vendor BestVendor --serial_number 100
      ```
 
-4. **Interacting with the Central System**:
+5. **Interacting with the Central System**:
    - Use HTTP requests to interact with the Central System's REST API for querying and updating Charging Point configurations.
+
