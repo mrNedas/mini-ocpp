@@ -3,7 +3,7 @@ import json
 import websockets
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from quart import Quart, jsonify, request
 from .message_types import MessageType
 
@@ -100,7 +100,7 @@ class CentralSystem:
 
         response_payload = {
             "status": "Accepted",
-            "currentTime": datetime.utcnow().isoformat() + "Z",
+            "currentTime": datetime.now(timezone.utc).isoformat(),
             "interval": 300,
         }
         response = [3, message_id, response_payload]
@@ -117,7 +117,7 @@ class CentralSystem:
             message_id (str): The ID of the Heartbeat message.
         """
         logging.info("Received Heartbeat")
-        response_payload = {"currentTime": datetime.utcnow().isoformat() + "Z"}
+        response_payload = {"currentTime": datetime.now(timezone.utc).isoformat()}
         response = [3, message_id, response_payload]
         response_json = json.dumps(response)
         await websocket.send(response_json)
