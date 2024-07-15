@@ -9,7 +9,26 @@ from .message_types import MessageType
 
 
 class CentralSystem:
+    """
+    Represents a central system managing communication with multiple EV charging points.
+
+    Attributes:
+        host (str): The host address of the central system.
+        ws_port (int): The WebSocket port for communication with charging points.
+        http_port (int): The HTTP port for REST API interactions.
+        connected_charging_points (dict): Dictionary to store connected charging points.
+        pending_requests (dict): Dictionary to store pending requests and their futures.
+    """
+
     def __init__(self, host, ws_port, http_port):
+        """
+        Initializes a CentralSystem instance.
+
+        Args:
+            host (str): The host address of the central system.
+            ws_port (int): The WebSocket port for communication with charging points.
+            http_port (int): The HTTP port for REST API interactions.
+        """
         self.host = host
         self.ws_port = ws_port
         self.http_port = http_port
@@ -17,6 +36,13 @@ class CentralSystem:
         self.pending_requests = {}
 
     async def process_call_message(self, websocket, message):
+        """
+        Processes incoming Call messages from charging points.
+
+        Args:
+            websocket: The WebSocket connection object.
+            message (list): The incoming message from a charging point.
+        """
         message_id = message[1]
         action = message[2]
         payload = message[3]
@@ -28,6 +54,12 @@ class CentralSystem:
             logging.warning(f"Received unsupported action: {action}")
 
     def process_call_result_message(self, message):
+        """
+        Processes incoming CallResult messages from charging points.
+
+        Args:
+            message (list): The incoming CallResult message from a charging point.
+        """
         message_id = message[1]
         payload = message[2]
         if message_id in self.pending_requests:
@@ -35,6 +67,13 @@ class CentralSystem:
             future.set_result(payload)
 
     async def process_message(self, websocket, message):
+        """
+        Processes incoming messages based on their type (Call or CallResult).
+
+        Args:
+            websocket: The WebSocket connection object.
+            message (list): The incoming message from a charging point.
+        """
         try:
             message_type = message[0]
             if message_type == MessageType.CALL.value:
@@ -45,6 +84,14 @@ class CentralSystem:
             logging.error(f"Error processing message: {e}")
 
     async def process_boot_notification(self, websocket, message_id, payload):
+        """
+        Processes BootNotification message from a charging point.
+
+        Args:
+            websocket: The WebSocket connection object.
+            message_id (str): The ID of the BootNotification message.
+            payload (dict): The payload of the BootNotification message.
+        """
         logging.info(f"Received BootNotification with payload: {payload}")
         charge_point_id = payload.get("chargePointSerialNumber")
         if charge_point_id:
@@ -62,6 +109,13 @@ class CentralSystem:
         logging.debug(f"Sent: {response_json}")
 
     async def process_heartbeat(self, websocket, message_id):
+        """
+        Processes Heartbeat message from a charging point.
+
+        Args:
+            websocket: The WebSocket connection object.
+            message_id (str): The ID of the Heartbeat message.
+        """
         logging.info("Received Heartbeat")
         response_payload = {"currentTime": datetime.utcnow().isoformat() + "Z"}
         response = [3, message_id, response_payload]
@@ -70,6 +124,12 @@ class CentralSystem:
         logging.debug(f"Sent: {response_json}")
 
     async def handle_connection(self, websocket):
+        """
+        Handles WebSocket connections from charging points.
+
+        Args:
+            websocket: The WebSocket connection object.
+        """
         try:
             async for message in websocket:
                 message = json.loads(message)
@@ -82,6 +142,15 @@ class CentralSystem:
                     break
 
     async def send_get_configuration(self, charge_point_id):
+        """
+        Sends GetConfiguration request to a charging point and awaits response.
+
+        Args:
+            charge_point_id (str): The ID of the charging point.
+
+        Returns:
+            dict: The response payload from the charging point.
+        """
         if charge_point_id in self.connected_charging_points:
             websocket = self.connected_charging_points[charge_point_id]
             message_id = str(uuid.uuid4())
@@ -101,6 +170,17 @@ class CentralSystem:
             return jsonify({"error": "Charging point not connected"}), 404
 
     async def send_change_configuration(self, charge_point_id, key, value):
+        """
+        Sends ChangeConfiguration request to a charging point and awaits response.
+
+        Args:
+            charge_point_id (str): The ID of the charging point.
+            key (str): The configuration key to change.
+            value (any): The new value for the configuration key.
+
+        Returns:
+            dict: The response payload from the charging point.
+        """
         if charge_point_id in self.connected_charging_points:
             websocket = self.connected_charging_points[charge_point_id]
             message_id = str(uuid.uuid4())
@@ -121,6 +201,9 @@ class CentralSystem:
             return jsonify({"error": "Charging point not connected"}), 404
 
     async def run(self):
+        """
+        Runs the CentralSystem, starting WebSocket server and HTTP REST API.
+        """
         app = Quart(__name__)
 
         @app.route("/charging_points/<charge_point_id>/configuration", methods=["GET"])

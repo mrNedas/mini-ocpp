@@ -5,11 +5,30 @@ import logging
 import uuid
 from .message_types import MessageType
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
 
 class ChargingPoint:
+    """
+    Represents an EV Charging Point, handling communication and configuration with the Central System.
+
+    Attributes:
+        uri (str): The WebSocket URI of the central system.
+        model (str): The model of the charging point.
+        vendor (str): The vendor of the charging point.
+        serial_number (str): The serial number of the charging point.
+        config (dict): The configuration of the charging point.
+        __sent_calls (dict): A dictionary to keep track of sent calls and their IDs.
+    """
+
     def __init__(self, uri, model, vendor, serial_number):
+        """
+        Initialize a ChargingPoint instance.
+
+        Args:
+            uri (str): The WebSocket URI of the central system.
+            model (str): The model of the charging point.
+            vendor (str): The vendor of the charging point.
+            serial_number (str): The serial number of the charging point.
+        """
         self.uri = uri
         self.model = model
         self.vendor = vendor
@@ -18,6 +37,12 @@ class ChargingPoint:
         self.__sent_calls = {}
 
     def form_boot_notification_payload(self):
+        """
+        Forms the payload for the BootNotification message.
+
+        Returns:
+            dict: The payload dictionary containing charge point model, vendor, and serial number.
+        """
         return {
             "chargePointModel": self.model,
             "chargePointVendor": self.vendor,
@@ -25,16 +50,34 @@ class ChargingPoint:
         }
 
     def process_boot_notification(self, payload):
+        """
+        Processes the BootNotification response and updates the configuration.
+
+        Args:
+            payload (dict): The payload received in the BootNotification response.
+        """
         self.config["HeartbeatInterval"] = payload["interval"]
         logging.info(
             f"Heartbeat interval set to: {self.config['HeartbeatInterval']} seconds"
         )
 
     def process_heartbeat(self, payload):
+        """
+        Processes the Heartbeat message.
+
+        Args:
+            payload (dict): The payload received in the Heartbeat message.
+        """
         logging.info("Process heartbeat")
         # TODO: update CP's local clock
 
     async def send_boot_notification(self, websocket):
+        """
+        Sends the BootNotification message to the central system.
+
+        Args:
+            websocket: The WebSocket connection object.
+        """
         message_id = str(uuid.uuid4())
         action = "BootNotification"
         payload = self.form_boot_notification_payload()
@@ -46,6 +89,12 @@ class ChargingPoint:
         self.__sent_calls[message_id] = action
 
     async def send_heartbeat(self, websocket):
+        """
+        Sends the Heartbeat message to the central system.
+
+        Args:
+            websocket: The WebSocket connection object.
+        """
         message_id = str(uuid.uuid4())
         action = "Heartbeat"
         request = [MessageType.CALL.value, message_id, action, {}]
@@ -56,12 +105,31 @@ class ChargingPoint:
         self.__sent_calls[message_id] = action
 
     def process_get_configuration(self, message_id):
+        """
+        Processes the GetConfiguration request and returns the current configuration.
+
+        Args:
+            message_id (str): The ID of the incoming message.
+
+        Returns:
+            list: The CallResult message containing the current configuration.
+        """
         logging.info("Processing GetConfiguration request")
         payload = {"configuration": self.config}
         response = [MessageType.CALL_RESULT.value, message_id, payload]
         return response
 
     def process_change_configuration(self, message_id, payload):
+        """
+        Processes the ChangeConfiguration request and updates the configuration.
+
+        Args:
+            message_id (str): The ID of the incoming message.
+            payload (dict): The payload containing the configuration change request.
+
+        Returns:
+            list: The CallResult message indicating whether the configuration change was accepted.
+        """
         logging.info(f"Processing ChangeConfiguration with payload: {payload}")
         key = payload["key"]
         value = payload["value"]
@@ -77,6 +145,15 @@ class ChargingPoint:
         return response
 
     def process_call_message(self, message):
+        """
+        Processes a Call message and invokes corresponding handlers.
+
+        Args:
+            message (list): The incoming Call message.
+
+        Returns:
+            str: JSON-encoded string of the CallResult message, if any.
+        """
         message_id = message[1]
         action = message[2]
         payload = message[3]
@@ -91,6 +168,12 @@ class ChargingPoint:
         return json.dumps(response)
 
     def process_call_result_message(self, message):
+        """
+        Processes a CallResult message and invokes corresponding handlers.
+
+        Args:
+            message (list): The incoming CallResult message.
+        """
         message_id = message[1]
         if self.__sent_calls[message_id]:
             action = self.__sent_calls[message_id]
@@ -106,6 +189,15 @@ class ChargingPoint:
             self.process_heartbeat(payload)
 
     def handle_message(self, message):
+        """
+        Handles incoming messages based on their type (Call or CallResult).
+
+        Args:
+            message (list): The incoming message.
+
+        Returns:
+            str: JSON-encoded string of the CallResult message, if any.
+        """
         logging.info(f"Received: {message}")
 
         message_type = message[0]
@@ -115,6 +207,12 @@ class ChargingPoint:
             self.process_call_result_message(message)
 
     async def listen_for_messages(self, websocket):
+        """
+        Listens for incoming messages from the central system.
+
+        Args:
+            websocket: The WebSocket connection object.
+        """
         try:
             while True:
                 message = await websocket.recv()
@@ -127,6 +225,12 @@ class ChargingPoint:
             logging.info("WebSocket connection closed.")
 
     async def heartbeat_task(self, websocket):
+        """
+        Sends periodic Heartbeat messages to the central system.
+
+        Args:
+            websocket: The WebSocket connection object.
+        """
         while True:
             await self.send_heartbeat(websocket)
             total_sleep_time = 0
@@ -135,6 +239,10 @@ class ChargingPoint:
                 total_sleep_time += 1
 
     async def run(self):
+        """
+        Runs the ChargingPoint, establishing connection, sending BootNotification,
+        and managing message exchange with the central system.
+        """
         async with websockets.connect(self.uri) as websocket:
             listen_task = asyncio.create_task(self.listen_for_messages(websocket))
             heartbeat_task = asyncio.create_task(self.heartbeat_task(websocket))
