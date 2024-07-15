@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from quart import Quart, jsonify, request
 from .message_types import MessageType
+from .message_validator import MessageValidator
 
 
 class CentralSystem:
@@ -34,6 +35,8 @@ class CentralSystem:
         self.http_port = http_port
         self.connected_charging_points = {}  # Store connected charging points
         self.pending_requests = {}
+        self.default_heartbeat_interval = 20
+        self.__validator = MessageValidator(schema_dir="./schemas/json")
 
     async def process_call_message(self, websocket, message):
         """
@@ -78,7 +81,10 @@ class CentralSystem:
             message_type = message[0]
             if message_type == MessageType.CALL.value:
                 return await self.process_call_message(websocket, message)
-            elif message_type == MessageType.CALL_RESULT.value:
+            elif (
+                message_type == MessageType.CALL_RESULT.value
+                or message_type == MessageType.CALL_ERROR.value
+            ):
                 return self.process_call_result_message(message)
         except Exception as e:
             logging.error(f"Error processing message: {e}")
@@ -93,17 +99,26 @@ class CentralSystem:
             payload (dict): The payload of the BootNotification message.
         """
         logging.info(f"Received BootNotification with payload: {payload}")
-        charge_point_id = payload.get("chargePointSerialNumber")
-        if charge_point_id:
-            self.connected_charging_points[charge_point_id] = websocket
-            logging.info(f"Charging point {charge_point_id} connected.")
+        is_valid = self.__validator.validate_message("BootNotification", payload)
+
+        if is_valid:
+            charge_point_id = payload.get("chargePointSerialNumber")
+            if charge_point_id:
+                self.connected_charging_points[charge_point_id] = websocket
+                logging.info(f"Charging point {charge_point_id} connected.")
+            message_type = MessageType.CALL_RESULT.value
+            status = "Accepted"
+        else:
+            logging.error(f"Invalid BootNotification received from {charge_point_id}.")
+            message_type = MessageType.CALL_RESULT.value
+            status = "Accepted"
 
         response_payload = {
-            "status": "Accepted",
+            "status": status,
             "currentTime": datetime.now(timezone.utc).isoformat(),
-            "interval": 300,
+            "interval": self.default_heartbeat_interval,
         }
-        response = [3, message_id, response_payload]
+        response = [message_type, message_id, response_payload]
         response_json = json.dumps(response)
         await websocket.send(response_json)
         logging.debug(f"Sent: {response_json}")
@@ -118,7 +133,7 @@ class CentralSystem:
         """
         logging.info("Received Heartbeat")
         response_payload = {"currentTime": datetime.now(timezone.utc).isoformat()}
-        response = [3, message_id, response_payload]
+        response = [MessageType.CALL_RESULT.value, message_id, response_payload]
         response_json = json.dumps(response)
         await websocket.send(response_json)
         logging.debug(f"Sent: {response_json}")
@@ -141,12 +156,13 @@ class CentralSystem:
                     del self.connected_charging_points[charge_point_id]
                     break
 
-    async def send_get_configuration(self, charge_point_id):
+    async def send_get_configuration(self, charge_point_id, payload):
         """
         Sends GetConfiguration request to a charging point and awaits response.
 
         Args:
             charge_point_id (str): The ID of the charging point.
+            payload (dict): The payload of the GetConfiguration message.
 
         Returns:
             dict: The response payload from the charging point.
@@ -155,7 +171,7 @@ class CentralSystem:
             websocket = self.connected_charging_points[charge_point_id]
             message_id = str(uuid.uuid4())
             action = "GetConfiguration"
-            request = [MessageType.CALL.value, message_id, action, {}]
+            request = [MessageType.CALL.value, message_id, action, payload]
             request_json = json.dumps(request)
 
             await websocket.send(request_json)
@@ -169,14 +185,14 @@ class CentralSystem:
             logging.error(f"Charging point {charge_point_id} not connected")
             return jsonify({"error": "Charging point not connected"}), 404
 
-    async def send_change_configuration(self, charge_point_id, key, value):
+    async def send_change_configuration(self, charge_point_id, payload):
         """
         Sends ChangeConfiguration request to a charging point and awaits response.
 
         Args:
             charge_point_id (str): The ID of the charging point.
             key (str): The configuration key to change.
-            value (any): The new value for the configuration key.
+            payload (any): The new value for the configuration key.
 
         Returns:
             dict: The response payload from the charging point.
@@ -185,7 +201,6 @@ class CentralSystem:
             websocket = self.connected_charging_points[charge_point_id]
             message_id = str(uuid.uuid4())
             action = "ChangeConfiguration"
-            payload = {"key": key, "value": value}
             request = [MessageType.CALL.value, message_id, action, payload]
             request_json = json.dumps(request)
 
@@ -208,14 +223,21 @@ class CentralSystem:
 
         @app.route("/charging_points/<charge_point_id>/configuration", methods=["GET"])
         async def get_charging_point_configuration(charge_point_id):
-            return await self.send_get_configuration(charge_point_id)
+            data = await request.get_json()
+            valid_body = self.__validator.validate_message("GetConfiguration", data)
+            if valid_body:
+                return await self.send_get_configuration(charge_point_id, data)
+            else:
+                return jsonify({"error": "Invalid body"}), 400
 
         @app.route("/charging_points/<charge_point_id>/configuration", methods=["POST"])
         async def change_charging_point_configuration(charge_point_id):
             data = await request.get_json()
-            key = data.get("key")
-            value = data.get("value")
-            return await self.send_change_configuration(charge_point_id, key, value)
+            valid_body = self.__validator.validate_message("ChangeConfiguration", data)
+            if valid_body:
+                return await self.send_change_configuration(charge_point_id, data)
+            else:
+                return jsonify({"error": "Invalid body"}), 400
 
         server_task = asyncio.create_task(
             app.run_task(host=self.host, port=self.http_port)

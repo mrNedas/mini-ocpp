@@ -42,7 +42,7 @@ def describe_charging_point():
 
         def accepts_valid_configuration(charging_point):
             message_id = "test_message_id"
-            payload = {"key": "HeartbeatInterval", "value": 60}
+            payload = {"key": "HeartbeatInterval", "value": "60"}
             response = charging_point.process_change_configuration(message_id, payload)
             assert charging_point.config["HeartbeatInterval"] == 60
             assert response[2]["status"] == "Accepted"
@@ -56,9 +56,12 @@ def describe_charging_point():
     def describe_handle_message():
 
         def with_call_message(charging_point):
-            message = [2, "123", "GetConfiguration", {}]
+            message = [2, "123", "GetConfiguration", {"key": ["NoHeartbeatInterval"]}]
             response = charging_point.handle_message(message)
-            assert '"configuration"' in response
+            assert (
+                '{"configurationKey": [], "unknownKey": ["NoHeartbeatInterval"]}]'
+                in response
+            )
 
         def with_call_result_message(charging_point):
             charging_point._ChargingPoint__sent_calls["123"] = "BootNotification"

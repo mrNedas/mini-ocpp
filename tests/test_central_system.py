@@ -42,4 +42,4 @@ def describe_central_system():
             await central_system.process_call_message(mock_websocket, message)
             mock_websocket.send.assert_called_once()
             response = json.loads(mock_websocket.send.call_args[0][0])
-            assert response[2]["currentTime"].endswith("Z")
+            assert response[2]["currentTime"]

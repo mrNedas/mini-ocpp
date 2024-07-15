@@ -4,6 +4,7 @@ import websockets
 import logging
 import uuid
 from .message_types import MessageType
+from .message_validator import MessageValidator
 
 
 class ChargingPoint:
@@ -35,6 +36,7 @@ class ChargingPoint:
         self.serial_number = serial_number
         self.config = {"HeartbeatInterval": 30}
         self.__sent_calls = {}
+        self.__validator = MessageValidator(schema_dir="./schemas/json")
 
     def form_boot_notification_payload(self):
         """
@@ -104,7 +106,7 @@ class ChargingPoint:
         logging.debug(f"Sent: {request_json}")
         self.__sent_calls[message_id] = action
 
-    def process_get_configuration(self, message_id):
+    def process_get_configuration(self, message_id, payload):
         """
         Processes the GetConfiguration request and returns the current configuration.
 
@@ -115,8 +117,33 @@ class ChargingPoint:
             list: The CallResult message containing the current configuration.
         """
         logging.info("Processing GetConfiguration request")
-        payload = {"configuration": self.config}
-        response = [MessageType.CALL_RESULT.value, message_id, payload]
+        is_valid = self.__validator.validate_message("GetConfiguration", payload)
+        if is_valid:
+            requested_config = []
+            unknown_keys = []
+            for key in payload.get("key"):
+                if key in self.config:
+                    requested_config.append(
+                        {
+                            "key": key,
+                            "readonly": False,
+                            "value": self.config[key],
+                        }
+                    )
+                else:
+                    unknown_keys.append(key)
+
+            message_type = MessageType.CALL_RESULT.value
+            response_payload = {
+                "configurationKey": requested_config,
+                "unknownKey": unknown_keys,
+            }
+        else:
+            logging.error(f"Validation error: invalid GetConfiguration payload")
+            message_type = MessageType.CALL_ERROR.value
+            response_payload = {"status": "Rejected"}
+
+        response = [message_type, message_id, response_payload]
         return response
 
     def process_change_configuration(self, message_id, payload):
@@ -131,17 +158,20 @@ class ChargingPoint:
             list: The CallResult message indicating whether the configuration change was accepted.
         """
         logging.info(f"Processing ChangeConfiguration with payload: {payload}")
+        is_valid = self.__validator.validate_message("ChangeConfiguration", payload)
         key = payload["key"]
-        value = payload["value"]
-        if key in self.config:
-            self.config[key] = value
+        if key in self.config and is_valid:
+            value = payload["value"]
+            self.config[key] = int(value)
             logging.info(f"Changed configuration: {key} = {value}")
+            message_type = MessageType.CALL_RESULT.value
             response_payload = {"status": "Accepted"}
         else:
             logging.error(f"Rejected configuration change: unknown key {key}")
+            message_type = MessageType.CALL_ERROR.value
             response_payload = {"status": "Rejected"}
 
-        response = [MessageType.CALL_RESULT.value, message_id, response_payload]
+        response = [message_type, message_id, response_payload]
         return response
 
     def process_call_message(self, message):
@@ -159,7 +189,7 @@ class ChargingPoint:
         payload = message[3]
 
         if action == "GetConfiguration":
-            response = self.process_get_configuration(message_id)
+            response = self.process_get_configuration(message_id, payload)
         elif action == "ChangeConfiguration":
             response = self.process_change_configuration(message_id, payload)
         else:
@@ -205,6 +235,8 @@ class ChargingPoint:
             return self.process_call_message(message)
         elif message_type == MessageType.CALL_RESULT.value:
             self.process_call_result_message(message)
+        else:
+            logging.error(f"Received call error: {message}")
 
     async def listen_for_messages(self, websocket):
         """
