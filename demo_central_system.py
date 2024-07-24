@@ -1,5 +1,5 @@
 import asyncio
-from mini_ocpp.central_system import CentralSystem
+from mini_ocpp import CentralSystem
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

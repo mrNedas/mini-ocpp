@@ -45,7 +45,7 @@ This project demonstrates communication between a Central System and multiple Ch
 2. **Running Tests**:
    - To run tests using Poetry:
      ```
-     poetry run test
+     poetry run pytest
      ```
 
 3. **Running the Central System**:

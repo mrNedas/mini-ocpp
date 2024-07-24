@@ -1,7 +1,7 @@
 import asyncio
 import argparse
 import logging
-from mini_ocpp.charger_point import ChargingPoint
+from mini_ocpp import ChargingPoint
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
