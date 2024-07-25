@@ -23,8 +23,3 @@ class MessageValidator:
         except exceptions.ValidationError as e:
             logging.error(f"Validation error for {schema_name}: {e.message}")
             return False
-
-
-# Example usage:
-# validator = JSONValidator(schema_dir='./schemas/json')
-# is_valid = validator.validate_message('Heartbeat', message)
