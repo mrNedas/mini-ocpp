@@ -58,6 +58,7 @@ class ChargingPoint:
         Args:
             payload (dict): The payload received in the BootNotification response.
         """
+        logging.info("Processing BootNotification response")
         self.config["HeartbeatInterval"] = payload["interval"]
         logging.info(
             f"Heartbeat interval set to: {self.config['HeartbeatInterval']} seconds"
@@ -70,7 +71,7 @@ class ChargingPoint:
         Args:
             payload (dict): The payload received in the Heartbeat message.
         """
-        logging.info("Process heartbeat")
+        logging.info("Processing Heartbeat response")
         # TODO: update CP's local clock
 
     async def send_boot_notification(self, websocket):
@@ -87,8 +88,9 @@ class ChargingPoint:
         request_json = json.dumps(request)
 
         await websocket.send(request_json)
-        logging.debug(f"Sent: {request_json}")
         self.__sent_calls[message_id] = action
+        logging.info(f"Sent BootNotification")
+        logging.debug(f"Sent: {request_json}")
 
     async def send_heartbeat(self, websocket):
         """
@@ -103,8 +105,9 @@ class ChargingPoint:
         request_json = json.dumps(request)
 
         await websocket.send(request_json)
-        logging.debug(f"Sent: {request_json}")
         self.__sent_calls[message_id] = action
+        logging.info(f"Sent Heartbeat")
+        logging.debug(f"Sent: {request_json}")
 
     def process_get_configuration(self, message_id, payload):
         """
@@ -157,7 +160,7 @@ class ChargingPoint:
         Returns:
             list: The CallResult message indicating whether the configuration change was accepted.
         """
-        logging.info(f"Processing ChangeConfiguration with payload: {payload}")
+        logging.info("Processing ChangeConfiguration request")
         is_valid = self.__validator.validate_message("ChangeConfiguration", payload)
         key = payload["key"]
         if key in self.config and is_valid:
@@ -228,7 +231,7 @@ class ChargingPoint:
         Returns:
             str: JSON-encoded string of the CallResult message, if any.
         """
-        logging.info(f"Received: {message}")
+        logging.debug(f"Received: {message}")
 
         message_type = message[0]
         if message_type == MessageType.CALL.value:

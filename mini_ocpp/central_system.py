@@ -38,6 +38,22 @@ class CentralSystem:
         self.default_heartbeat_interval = 20
         self.__validator = MessageValidator(schema_dir="./schemas/json")
 
+    def find_charge_point_id_by_websocket(self, websocket):
+        """
+        Finds the charge point ID associated with a given WebSocket connection.
+
+        Args:
+            websocket: The WebSocket connection to search for in the connected charging points.
+
+        Returns:
+            The charge point ID associated with the given WebSocket connection if found,
+            otherwise None.
+        """
+        for charge_point_id, ws in self.connected_charging_points.items():
+            if ws == websocket:
+                return charge_point_id
+        return None
+
     async def process_call_message(self, websocket, message):
         """
         Processes incoming Call messages from charging points.
@@ -77,6 +93,8 @@ class CentralSystem:
             websocket: The WebSocket connection object.
             message (list): The incoming message from a charging point.
         """
+        logging.debug(f"Received: {message}")
+
         try:
             message_type = message[0]
             if message_type == MessageType.CALL.value:
@@ -98,20 +116,19 @@ class CentralSystem:
             message_id (str): The ID of the BootNotification message.
             payload (dict): The payload of the BootNotification message.
         """
-        logging.info(f"Received BootNotification with payload: {payload}")
         is_valid = self.__validator.validate_message("BootNotification", payload)
 
         if is_valid:
             charge_point_id = payload.get("chargePointSerialNumber")
+            logging.info(f"Received BootNotification from CP: {charge_point_id}")
             if charge_point_id:
                 self.connected_charging_points[charge_point_id] = websocket
-                logging.info(f"Charging point {charge_point_id} connected.")
             message_type = MessageType.CALL_RESULT.value
             status = "Accepted"
         else:
             logging.error(f"Invalid BootNotification received from {charge_point_id}.")
-            message_type = MessageType.CALL_RESULT.value
-            status = "Accepted"
+            message_type = MessageType.CALL_ERROR.value
+            status = "Rejected"
 
         response_payload = {
             "status": status,
@@ -131,7 +148,8 @@ class CentralSystem:
             websocket: The WebSocket connection object.
             message_id (str): The ID of the Heartbeat message.
         """
-        logging.info("Received Heartbeat")
+        charge_point_id = self.find_charge_point_id_by_websocket(websocket)
+        logging.info(f"Received Heartbeat from CP: {charge_point_id}")
         response_payload = {"currentTime": datetime.now(timezone.utc).isoformat()}
         response = [MessageType.CALL_RESULT.value, message_id, response_payload]
         response_json = json.dumps(response)
